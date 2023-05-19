@@ -1,0 +1,102 @@
+<- Here is the code for custom authorization->
+<--Create Login HttpGET method and HttpPOST and set returnurl-->
+<--Copy this code-->
+
+        [HttpPost]
+        [AllowAnonymous]
+        [ValidateAntiForgeryToken]
+        public ActionResult Login(USER model, string returnUrl)
+        {
+            if (!ModelState.IsValid)
+            {
+                return View(model);
+            }
+            Repository repo = new Repository();
+
+            USER user = repo.GetUserDetails(model.UserName, model.Password);
+
+            if (user != null)
+            {
+                FormsAuthentication.SetAuthCookie(user.UserName, false);
+                FormsAuthentication.SetAuthCookie(Convert.ToString(user.UserID), false);
+
+                var authTicket = new FormsAuthenticationTicket(1, user.UserName, DateTime.Now, DateTime.Now.AddMinutes(20), false, user.Roles);
+                string encryptedTicket = FormsAuthentication.Encrypt(authTicket);
+                var authCookie = new HttpCookie(FormsAuthentication.FormsCookieName, encryptedTicket);
+                HttpContext.Response.Cookies.Add(authCookie);
+
+                //Based on the Role we can transfer the user to different page
+                return RedirectToAction("Index", "Home");
+            }
+            else
+            {
+                ModelState.AddModelError("", "Invalid login attempt.");
+                return View(model);
+            }
+
+        }
+        
+        <--After that, create a Role.cs class and paste this code-->
+        
+    public enum Role
+    {
+        SUPERADMIN = 1,
+        ADMIN = 2,
+        USER = 3,
+    }
+    
+    <--after that we will create roleAuthorization.cs class-->
+     [AttributeUsage(AttributeTargets.Method | AttributeTargets.Class, Inherited = true, AllowMultiple = true)]
+    public class AuthorizeRoleAttribute : AuthorizeAttribute
+    {
+        public AuthorizeRoleAttribute(params object[] roles)
+        {
+            if (roles.Any(r => r.GetType().BaseType != typeof(Enum)))
+                throw new ArgumentException("roles");
+
+            this.Roles = string.Join(",", roles.Select(r => Enum.GetName(r.GetType(), r)));
+        }
+        public override void OnAuthorization(AuthorizationContext filterContext)
+        {
+            base.OnAuthorization(filterContext);
+            if (!filterContext.HttpContext.User.Identity.IsAuthenticated)
+            {
+                filterContext.Result = new RedirectResult("~/Home/Login");
+                return;
+            }
+            if (filterContext.Result is HttpUnauthorizedResult)
+            {
+                filterContext.Result = new RedirectResult("~/Home/AccessDenied");
+                return;
+            }
+        }
+    }
+    
+    <--Now, we have to cahne in some another files...-->
+    
+     protected void Application_PostAuthenticateRequest(Object sender, EventArgs e)
+        {
+            var authCookie = HttpContext.Current.Request.Cookies[FormsAuthentication.FormsCookieName];
+            if (authCookie != null)
+            {
+                FormsAuthenticationTicket authTicket = FormsAuthentication.Decrypt(authCookie.Value);
+                if (authTicket != null && !authTicket.Expired)
+                {
+                    var roles = authTicket.UserData.Split(',');
+                    HttpContext.Current.User = new System.Security.Principal.GenericPrincipal(new FormsIdentity(authTicket), roles);
+                }
+            }
+        }
+        <--after that we will create a view for unauthorization access-->
+        
+        
+
+@{
+    ViewBag.Title = "Unauthorized Access";
+}
+
+<h1 class="text-danger">Unauthorized Access</h1>
+<h2 class="text-danger">You don’t have permission to view this page.</h2>
+
+
+        
